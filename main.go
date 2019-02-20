@@ -27,7 +27,6 @@ var people []Person
 
 func main() {
 	router := mux.NewRouter()
-	addData()
 	router.HandleFunc("/people", GetPeople).Methods("GET")
 	router.HandleFunc("/people/{id}", GetPerson).Methods("GET")
 	router.HandleFunc("/people", CreatePerson).Methods("POST")
@@ -37,33 +36,53 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8000", router))
 }
 
-func addData() {
-	people = append(people, Person{ID: uuid.New().String(), Firstname: "John", Lastname: "Doe", Address: &Address{City: "City X", State: "State X"}})
-	people = append(people, Person{ID: uuid.New().String(), Firstname: "Jane", Lastname: "Doe", Address: &Address{City: "City X", State: "State X"}})
-}
-
 func clearData() {
 	people = people[:0]
 }
 
 func GetPeople(w http.ResponseWriter, r *http.Request) {
+	conn := ConnectDatabase()
+	defer conn.Close()
+
+	results, err := conn.Query("SELECT id, firstname, lastname FROM phone_book")
+	if err != nil {
+		panic(err.Error())
+	}
+
+	for results.Next() {
+		var person Person
+		err = results.Scan(&person.ID, &person.Firstname, &person.Lastname)
+		if err != nil {
+			panic(err.Error())
+		}
+		people = append(people, person)
+	}
 	json.NewEncoder(w).Encode(people)
 }
 
 func GetPerson(w http.ResponseWriter, r *http.Request) {
+	conn := ConnectDatabase()
+	defer conn.Close()
+
+	var person Person
 	params := mux.Vars(r)
-	fmt.Println(params)
-	for _, item := range people {
+	err := conn.QueryRow("SELECT id, firstname, lastname FROM phone_book where id = ?", params["id"]).Scan(&person.ID, &person.Firstname, &person.Lastname)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	json.NewEncoder(w).Encode(person)
+
+	/*for _, item := range people {
 		fmt.Println(item.ID)
 		if item.ID == params["id"] {
 			json.NewEncoder(w).Encode(item)
 		}
-	}
+	}*/
 }
 
 func CreatePerson(w http.ResponseWriter, r *http.Request) {
 	defer fmt.Println("complete create person") //run after the surrounding function returns.
-
 	conn := ConnectDatabase()
 	defer conn.Close()
 	var person Person
@@ -81,12 +100,28 @@ func CreatePerson(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeletePerson(w http.ResponseWriter, r *http.Request) {
+	conn := ConnectDatabase()
+	defer conn.Close()
+
 	params := mux.Vars(r)
-	for index, item := range people {
-		if item.ID == params["id"] {
-			people = append(people[:index], people[index+1:]...)
-			break
-		}
-		json.NewEncoder(w).Encode(people)
+	stmt, err := conn.Prepare("DELETE FROM phone_book where id = ?")
+	if err != nil {
+		panic(err.Error())
 	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(params["id"])
+	if err != nil {
+		panic(err)
+	}
+	clearData()
+	GetPeople(w, r)
+	// params := mux.Vars(r)
+	// for index, item := range people {
+	// 	if item.ID == params["id"] {
+	// 		people = append(people[:index], people[index+1:]...)
+	// 		break
+	// 	}
+	// 	json.NewEncoder(w).Encode(people)
+	// }
 }
