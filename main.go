@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 )
@@ -31,6 +32,8 @@ func main() {
 	router.HandleFunc("/people/{id}", GetPerson).Methods("GET")
 	router.HandleFunc("/people", CreatePerson).Methods("POST")
 	router.HandleFunc("/people/{id}", DeletePerson).Methods("DELETE")
+
+	fmt.Println("Connected to port 8000")
 	log.Fatal(http.ListenAndServe(":8000", router))
 }
 
@@ -59,10 +62,21 @@ func GetPerson(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreatePerson(w http.ResponseWriter, r *http.Request) {
+	defer fmt.Println("complete create person") //run after the surrounding function returns.
+
+	conn := ConnectDatabase()
+	defer conn.Close()
 	var person Person
 	_ = json.NewDecoder(r.Body).Decode(&person)
 	person.ID = uuid.New().String()
 	people = append(people, person)
+	fmt.Println(person.ID)
+	insert, err := conn.Query("INSERT INTO `phone_book` (id, firstname, lastname) values('" + person.ID + "', '" + person.Firstname + "', '" + person.Lastname + "')")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer insert.Close()
+
 	json.NewEncoder(w).Encode(people)
 }
 
